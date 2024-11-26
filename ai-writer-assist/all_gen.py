@@ -1,9 +1,14 @@
-import streamlit as st
 import os
+
 from dotenv import load_dotenv
-import google.generativeai as genai
-from openai import OpenAI
+import anthropic
+import cohere
+from huggingface_hub import InferenceClient
 from mistralai import Mistral
+from openai import OpenAI
+import streamlit as st
+import google.generativeai as genai
+from yandex_cloud_ml_sdk import YCloudML
 
 
 def load_api_key(env_var):
@@ -39,6 +44,30 @@ def configure_model(api_key, model_name):
             base_url="https://api.x.ai/v1",
         )
         return client
+    elif model_name.startswith('Mistral'):
+        client = Mistral(api_key=api_key)
+        return client
+    elif model_name.startswith('Cohere'):
+        co = cohere.ClientV2(api_key=api_key)
+        return co
+    elif model_name.startswith('Gemma'):
+        client = InferenceClient(
+            api_key=api_key)
+        return client
+    elif model_name.startswith('Llama'):
+        client = OpenAI(
+            api_key=api_key,
+            base_url="https://api.llama-api.com"
+        )
+        return client
+    elif model_name.startswith('Anthropic'):
+        client = anthropic.Anthropic()
+        return client
+    elif model_name.startswith('YandexGPT'):
+        sdk = YCloudML(folder_id="b1g7be5bgf5k516ljupc", auth=api_key)
+        model = sdk.models.completions('yandexgpt')
+        model = model.configure(temperature=0.5)
+        return model
     else:
         st.error(f"Unsupported model: {model_name}")
         st.stop()
@@ -73,6 +102,73 @@ def generate_answer(model, prompt, show_in_chunks, model_name):
             ],
         )
         return completion
+    elif model_name.startswith('Mistral'):
+        chat_response = model.chat.complete(
+            model="mistral-large-latest",
+            messages=[
+                {
+                    "role": "user",
+                    "content": prompt,
+                },
+            ]
+        )
+        return chat_response
+    elif model_name.startswith('Cohere'):
+        response = model.chat(
+            model="command-r-plus-08-2024",
+            messages=[
+                {
+                    "role": "user",
+                    "content": prompt,
+                }
+            ],
+        )
+        return response
+    elif model_name.startswith('Gemma'):
+        completion = model.chat.completions.create(
+            model="google/gemma-2-2b-it",
+            messages=[
+                {
+                    "role": "user",
+                    "content": prompt
+                }
+            ],
+            max_tokens=500
+        )
+        return completion
+    elif model_name.startswith('Llama'):
+        response = model.chat.completions.create(
+            model="llama3.1-70b",
+            messages=[
+                {"role": "system",
+                    "content": "Assistant is a large language model trained by OpenAI."},
+                {"role": "user", "content": prompt}
+            ],
+
+
+        )
+        return response
+    elif model_name.startswith('Anthropic'):
+        response = model.messages.create(
+            model="claude-3-5-sonnet-20241022",
+            max_tokens=1000,
+            temperature=0,
+            messages=[
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": prompt
+                        }
+                    ]
+                }
+            ]
+        )
+        return response
+    elif model_name.startswith('YandexGPT'):
+        response = model.run(prompt)
+        return response
     else:
         st.error("Failed to generate a response.")
         return None
@@ -88,11 +184,11 @@ def main(model_name, prompt, show_in_chunks):
         'Grok': 'GROK_API_KEY',
         'Mistral': 'MISTRAL_API_KEY',
         'Cohere': 'COHERE_API_KEY',
-        'Gemma': 'GEMMA_API_KEY',
+        'Gemma': 'HUGGING_FACE_API_KEY',
         'Llama': 'LLAMA_API_KEY',
         'Anthropic': 'ANTHROPIC_API_KEY',
-        'Goose': 'GOOSE_API_KEY'
-    }.get(next((key for key in ['Gemini', 'GPT', 'Grok', 'Mistral', 'Cohere', 'Gemma', 'Llama', 'Anthropic', 'Goose'] if model_name.startswith(key)), None), None)
+        'YandexGPT': 'YANDEX_API_KEY'
+    }.get(next((key for key in ['Gemini', 'GPT', 'Grok', 'Mistral', 'Cohere', 'Gemma', 'Llama', 'Anthropic', 'YandexGPT'] if model_name.startswith(key)), None), None)
     api_key = load_api_key(api_key_env_var)
     model = configure_model(api_key, model_name)
 
@@ -101,6 +197,10 @@ def main(model_name, prompt, show_in_chunks):
         if show_in_chunks and model_name.startswith('Gemini 1.5'):
             for chunk in response:
                 st.write(chunk.text)
+        elif model_name.startswith('Cohere'):
+            st.write(response.message.content[0].text)
+        elif model_name.startswith('YandexGPT'):
+            st.write(response[0].text)
         else:
             st.write(response.text if model_name.startswith(
                 'Gemini 1.5') else response.choices[0].message.content)
@@ -113,11 +213,16 @@ with st.form("generator"):
         ['Gemini 1.5 Flash',
          'Gemini 1.5 Flash-8B',
          'Gemini 1.5 Pro',
+         'Gemma',
          'Grok',
          'Mistral',
          'Cohere',
-         'GPT-4o',
-         'GPT-4o mini']
+         'YandexGPT',
+         'GPT-4o (currently unavailable)',
+         'GPT-4o mini (currently unavailable)',
+         'Llama (currently unavailable)',
+         'Anthropic (currently unavailable)',
+         ]
     )
     user_prompt = st.text_input('Type your prompt:')
     show_in_chunks = st.checkbox('Show the results in chunks')
