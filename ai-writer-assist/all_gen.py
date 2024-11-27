@@ -36,145 +36,85 @@ def configure_model(api_key, model_name):
         }
         return genai.GenerativeModel(model_map[model_name])
     elif model_name.startswith('GPT-4o'):
-        client = OpenAI(api_key=api_key)
-        return client
+        return OpenAI(api_key=api_key)
     elif model_name.startswith('Grok'):
-        client = OpenAI(
-            api_key=api_key,
-            base_url="https://api.x.ai/v1",
-        )
-        return client
+        return OpenAI(api_key=api_key, base_url="https://api.x.ai/v1")
     elif model_name.startswith('Mistral'):
-        client = Mistral(api_key=api_key)
-        return client
+        return Mistral(api_key=api_key)
     elif model_name.startswith('Cohere'):
-        co = cohere.ClientV2(api_key=api_key)
-        return co
+        return cohere.ClientV2(api_key=api_key)
     elif model_name.startswith('Gemma'):
-        client = InferenceClient(
-            api_key=api_key)
-        return client
+        return InferenceClient(api_key=api_key)
     elif model_name.startswith('Llama'):
-        client = OpenAI(
-            api_key=api_key,
-            base_url="https://api.llama-api.com"
-        )
-        return client
+        return OpenAI(api_key=api_key, base_url="https://api.llama-api.com")
     elif model_name.startswith('Anthropic'):
-        client = anthropic.Anthropic()
-        return client
+        return anthropic.Anthropic()
     elif model_name.startswith('YandexGPT'):
         sdk = YCloudML(folder_id="b1g7be5bgf5k516ljupc", auth=api_key)
-        model = sdk.models.completions('yandexgpt')
-        model = model.configure(temperature=0.5)
-        return model
+        return sdk.models.completions('yandexgpt').configure(temperature=0.5)
     else:
         st.error(f"Unsupported model: {model_name}")
         st.stop()
 
 
-def generate_answer(model, prompt, show_in_chunks, model_name):
+def generate_answer(model, prompt, model_name):
     """
     Generate the response from the selected model.
     """
     if model_name.startswith('Gemini 1.5'):
-        stream = show_in_chunks
-        response = model.generate_content(prompt, stream=stream)
+        response = model.generate_content(prompt)
         return response
-    elif model_name.startswith('GPT-4o'):
+    elif model_name.startswith('GPT-4o') or model_name.startswith('Grok'):
         completion = model.chat.completions.create(
-            model="gpt-4o-mini",
+            model="gpt-4o-mini" if model_name.startswith(
+                'GPT-4o') else "grok-beta",
             messages=[
                 {"role": "system", "content": "You are a helpful assistant."},
-                {
-                    "role": "user",
-                    "content": prompt
-                }
+                {"role": "user", "content": prompt}
             ]
-        )
-        return completion
-    elif model_name.startswith('Grok'):
-        completion = model.chat.completions.create(
-            model="grok-beta",
-            messages=[
-                {"role": "system", "content": "You are Grok, a helpful chatbot producing thorough and actionable answers to all questions."},
-                {"role": "user", "content": prompt},
-            ],
         )
         return completion
     elif model_name.startswith('Mistral'):
-        chat_response = model.chat.complete(
+        return model.chat.complete(
             model="mistral-large-latest",
-            messages=[
-                {
-                    "role": "user",
-                    "content": prompt,
-                },
-            ]
+            messages=[{"role": "user", "content": prompt}]
         )
-        return chat_response
     elif model_name.startswith('Cohere'):
-        response = model.chat(
+        return model.chat(
             model="command-r-plus-08-2024",
-            messages=[
-                {
-                    "role": "user",
-                    "content": prompt,
-                }
-            ],
+            messages=[{"role": "user", "content": prompt}]
         )
-        return response
     elif model_name.startswith('Gemma'):
-        completion = model.chat.completions.create(
+        return model.chat.completions.create(
             model="google/gemma-2-2b-it",
-            messages=[
-                {
-                    "role": "user",
-                    "content": prompt
-                }
-            ],
+            messages=[{"role": "user", "content": prompt}],
             max_tokens=500
         )
-        return completion
     elif model_name.startswith('Llama'):
-        response = model.chat.completions.create(
+        return model.chat.completions.create(
             model="llama3.1-70b",
             messages=[
                 {"role": "system",
                     "content": "Assistant is a large language model trained by OpenAI."},
                 {"role": "user", "content": prompt}
-            ],
-
-
+            ]
         )
-        return response
     elif model_name.startswith('Anthropic'):
-        response = model.messages.create(
+        return model.messages.create(
             model="claude-3-5-sonnet-20241022",
             max_tokens=1000,
             temperature=0,
-            messages=[
-                {
-                    "role": "user",
-                    "content": [
-                        {
-                            "type": "text",
-                            "text": prompt
-                        }
-                    ]
-                }
-            ]
+            messages=[{"role": "user", "content": {
+                "type": "text", "text": prompt}}]
         )
-        return response
     elif model_name.startswith('YandexGPT'):
-        response = model.run(prompt)
-        return response
+        return model.run(prompt)
     else:
         st.error("Failed to generate a response.")
         return None
 
 
-def main(model_name, prompt, show_in_chunks):
+def main(model_name, prompt):
     """
     Main logic to handle model selection, API configuration, and response generation.
     """
@@ -192,42 +132,27 @@ def main(model_name, prompt, show_in_chunks):
     api_key = load_api_key(api_key_env_var)
     model = configure_model(api_key, model_name)
 
-    response = generate_answer(model, prompt, show_in_chunks, model_name)
+    response = generate_answer(model, prompt, model_name)
     if response:
-        if show_in_chunks and model_name.startswith('Gemini 1.5'):
-            for chunk in response:
-                st.write(chunk.text)
-        elif model_name.startswith('Cohere'):
+        if model_name.startswith('Cohere'):
             st.write(response.message.content[0].text)
         elif model_name.startswith('YandexGPT'):
             st.write(response[0].text)
         else:
-            st.write(response.text if model_name.startswith(
-                'Gemini 1.5') else response.choices[0].message.content)
+            st.write(response.text if hasattr(response, 'text')
+                     else response.choices[0].message.content)
 
 
 # Streamlit interface
+st.header("Your Favorite _AI Assistants_ :blue[For Free] :sunglasses:")
+
 with st.form("generator"):
     chosen_model = st.selectbox(
         'Choose a model:',
-        ['Gemini 1.5 Flash',
-         'Gemini 1.5 Flash-8B',
-         'Gemini 1.5 Pro',
-         'Gemma',
-         'Grok',
-         'Mistral',
-         'Cohere',
-         'YandexGPT',
-         'GPT-4o (currently unavailable)',
-         'GPT-4o mini (currently unavailable)',
-         'Llama (currently unavailable)',
-         'Anthropic (currently unavailable)',
-         ]
+        ['Gemini 1.5 Flash', 'Gemini 1.5 Flash-8B', 'Gemini 1.5 Pro', 'Gemma',
+         'Grok', 'Mistral', 'Cohere', 'YandexGPT', 'GPT-4o (inactive)', 'Llama (inactive)', 'Anthropic (inactive)']
     )
     user_prompt = st.text_input('Type your prompt:')
-    show_in_chunks = st.checkbox('Show the results in chunks')
-    st.markdown(
-        '- :gray[You can wait for the full response or start getting it immediately in smaller chunks.]')
     submit = st.form_submit_button('Generate')
 
 if submit:
@@ -237,4 +162,4 @@ if submit:
         st.markdown(f'**Chosen model**: {chosen_model}')
         st.markdown(f'**Your prompt**: {user_prompt}')
         st.write("-" * 80)
-        main(chosen_model, user_prompt, show_in_chunks)
+        main(chosen_model, user_prompt)
